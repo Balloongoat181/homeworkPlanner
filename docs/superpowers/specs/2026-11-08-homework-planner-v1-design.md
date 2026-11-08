@@ -23,7 +23,7 @@ The student reports four problems. Version 1 targets the first three:
 |---|---|
 | Forgets assignments exist | Automatic Canvas + Skyward sync, plus manual add for things only said in class |
 | Doesn't know what's first | Explainable ranking, a "Next up" card, session plans, a Catch-up list |
-| Can't get started | Tiny first step from Claude, Start → Focus mode, "I'm stuck: make it smaller" |
+| Can't get started | Tiny first step from Claude, Start → Focus mode with the First-5 rule ("5 minutes, no need to finish"), "I'm stuck: make it smaller", "I'm frustrated" reset |
 | Time gets away | Partly: visual step timer and time estimates. Fully in v2, with calendar blocks |
 
 ### Non-goals for version 1
@@ -31,8 +31,8 @@ The student reports four problems. Version 1 targets the first three:
 - Google Calendar sync and reminders
 - Push notifications
 - Extracurriculars and side projects
-- Daily check-ins and if-then planning rituals
-- ACT and other practice
+- Daily check-ins, if-then planning rituals, and Growth reps
+- ACT (Acceptance and Commitment Therapy)-informed practice
 - Multiple users
 - Reading teacher PDFs or attachments
 
@@ -40,14 +40,24 @@ The student reports four problems. Version 1 targets the first three:
 
 1. **v1 Know + Next.** This document.
 2. **Calendar + reminders.** A Google Calendar secondary calendar (`calendar.app.created` scope), planned work blocks, popup reminders, and plan-change notices.
-3. **Projects + extracurriculars.** Robotics and side projects as projects with milestones, plus a capacity check.
-4. **Daily check-in.** If-then start plans, guilt-free re-planning, weekly review.
-5. **Practice.**
-   - Official ACT practice tests timed by section (Enhanced ACT: English 50Q/35m, Math 45Q/50m, Reading 36Q/40m, optional Science 40Q/40m).
-   - Error log tagged content / misread / timing / careless.
-   - Spaced, interleaved review.
-   - "Start practice" sprints on real tasks.
-   - **No brain games**: there's no evidence they transfer to schoolwork.
+3. **Projects + extracurriculars.** Robotics and side projects as projects with milestones, plus a capacity check. Growth reps can attach to project sessions: claim a task unprompted, "what could be better here?", a diagnosing rep, teaching a newer member.
+4. **Daily check-in + Growth.**
+   - If-then start plans and guilt-free re-planning.
+   - **Growth areas:** the student picks 2–3 focus areas at a time from five: initiative, frustration & feedback, focus & time, engineering skill, leadership & helping. Each area has small daily reps (about 10 minutes total) and one weekly goal.
+   - **Weekly rhythm:** a Sunday plan (about 10 min, built from the planner's real task list) and a Friday review (about 5 min: what got done, what felt hard, pick next week's areas).
+   - **Tracking:** "did it happen" tallies per area per week. No quality scores, no breakable streaks.
+   - The student chooses the areas and the goals. The app never assigns them.
+5. **ACT-informed practice** (Acceptance and Commitment Therapy, not the college test).
+   - A small skills library practiced **when calm**:
+     - a 2-minute regulation drill;
+     - values check-ins ("what matters to me about this?");
+     - defusion phrasing ("I'm having the thought that…");
+     - willingness reps (act on what matters even when it's uncomfortable);
+     - short rehearsed scripts for recurring situations (e.g. receiving feedback: pause → "Thanks, let me think about that" → come back later).
+   - This **supports** work with a therapist. It doesn't replace it, doesn't diagnose, and makes no clinical claims.
+   - **No brain games or "speed" training**: they don't transfer, and processing speed isn't something effort turns up. The goal is less friction through fluency, structure and lower time pressure.
+
+**Privacy rule for all steps:** personal goals, reps and reflections live only in the app's database. Never in the repo, fixtures, logs, or any AI prompt.
 
 ## 3. Research summary (2026-11-08)
 
@@ -161,7 +171,9 @@ Skyward syncs are kept rare because each one logs the student out of Skyward in 
 | `task_events` | Change log: new, due date moved, marked missing, grade posted, plan changed. Has a seen flag |
 | `sync_runs` | Source, start, end, status (`ok/partial/failed`), counts, error |
 | `credentials` | Source, ciphertext, IV, auth tag, metadata (e.g. Canvas token expiry) |
-| `settings` | Key-value: timer style, step size, session default, weights, AI model, daily AI cap |
+| `focus_sessions` | Task, step, startedAt, endedAt, reachedFive, endedBy (`done/stopped/frustrated`) |
+| `frustration_logs` | focusSessionId, feeling, optional note, copingMove, then (`back/smaller/stopped`). Private: never sent to Claude |
+| `settings` | Key-value: timer style, step size, session default, weights, AI model, daily AI cap, coping moves |
 
 ### Course matching
 
@@ -275,7 +287,20 @@ Mockups are in `../.superpowers/brainstorm/` (outside the repo).
 ### Focus mode
 
 - Dimmed screen, one step in large text, "Step N of M".
-- Buttons: **Done with this step** · **I'm stuck: make it smaller** (calls `splitStep`) · **Stop for now** (saves progress, no guilt copy).
+- Buttons: **Done with this step** · **I'm stuck: make it smaller** (calls `splitStep`) · **I'm frustrated** · **Stop for now** (saves progress, no guilt copy).
+
+**First-5 rule:**
+- Start opens Focus mode with the line "5 minutes. No need to finish."
+- At 5 minutes, a calm, silent banner reads "You started. Keep going or stop — both count." Both choices are one tap. Stopping is saved as a successful start.
+- Starts are counted (stored as a `focus_sessions` row: task, started, ended, reachedFive). That gives Step 4's Growth tallies and real time estimates something to build on.
+
+**I'm frustrated:**
+1. One screen: "Name it" with quick picks (frustrated / stuck / overwhelmed / annoyed / other) and an optional short note.
+2. Then the student's coping move. Defaults: step away 2 min, slow breathing, get water. Editable in Settings.
+3. A 2-minute pause timer (silent) runs.
+4. After the pause: **Back to this step** / **Make the step smaller** / **Stop for now**.
+
+No pressure to continue. The entry stays in the app's private database, is never sent to Claude, and gets no score.
 
 ### Timer
 
@@ -390,7 +415,8 @@ Never grades, credentials or personal data. No attachments in v1.
 - **Merge:** confident merge, ambiguous kept separate, two-miss archive, reappearance.
 - **API:** integration tests on in-memory SQLite.
 - **AI:** fake client. Covers schema validation, daily cap, template fallback. No live calls in tests.
-- **UI:** Playwright smoke test at phone viewport: Home → Start → complete a step.
+- **UI:** Playwright smoke test at phone viewport: Home → Start → complete a step. A second smoke test: Start → I'm frustrated → pause → Back to this step.
+- **Focus logic:** unit tests for the First-5 banner timing (with a fake clock) and for `focus_sessions` / `frustration_logs` being written correctly.
 
 ## 13. Open items, resolved during implementation
 
